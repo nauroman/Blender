@@ -12,10 +12,10 @@ Python scripts for Blender provides operators that moves all objects in the scen
 
 After installation, operators are available in Blender's F3 menu 
 
-To Center
-To Wall Center
-To Floor Center
-To Wall Floor Center
+- To Center
+- To Wall Center
+- To Floor Center
+- To Wall Floor Center
 
 ## How It Works
 
