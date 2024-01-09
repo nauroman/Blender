@@ -1,12 +1,10 @@
 # ToCenter Scripts for Blender
 
-Python scripts for Blender provides operators that moves all objects in the scene to the center.
+Python scripts for Blender provides operators that moves all objects in the scene to the center. Invert Normals - invert all selected objects normals.
 
 ## Installation
 
-1. Open Blender.
-2. Go to `Edit > Preferences > Add-ons > Install...`.
-3. Navigate to the `*.py` file and click `Install Add-on`.
+Copy startup.py to 'C:\Users\user\AppData\Roaming\Blender Foundation\Blender\4.0\scripts\startup' (for Windows users)
 
 ## Usage
 
@@ -16,6 +14,9 @@ After installation, operators are available in Blender's F3 menu
 - To Wall Center
 - To Floor Center
 - To Wall Floor Center
+- Invert Normals
+
+Invert Normals shortkey is CTRL+ALT+SHIFT+F
 
 ## How It Works
 
