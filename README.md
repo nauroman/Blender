@@ -13,6 +13,7 @@ After installation, operators are available in Blender's F3 menu
 - To Center
 - To Wall Center
 - To Floor Center
+- To Ceiling Center
 - To Wall Floor Center
 - Invert Normals
 
