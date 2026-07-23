@@ -1,192 +1,205 @@
-# Blender Centering Scripts for Blender 5.1
+# Nauroman Blender Tools for Blender 5.2
 
-This repository contains a small set of Blender Python operators for quickly repositioning mesh objects by their combined bounds.
+This repository contains Roman Naumov's separate Blender 5.2 workflow scripts for asset alignment, mesh cleanup, material cleanup, full-scene mesh merging, normal inversion, and FBX export presets.
 
-The goal is simple: make it fast to place an asset at the world center, on the floor, against a wall, or in a wall-floor corner before export or further scene work. This is especially useful when preparing models for Unity, Unreal, catalog renders, prefab creation, or any workflow where object placement needs to be predictable and repeatable.
+The five alignment commands share one implementation in `alignment_tools.py`. The other tools remain separate add-ons so each one can be enabled, disabled, or maintained independently.
 
-This project is intended for Blender 5.1 and documents the current behavior of the scripts in that version.
+## Compatibility and scope
 
-## Why this exists
+- Target version: Blender 5.2 LTS.
+- The installer writes only to the Blender `5.2` user configuration directory.
+- Blender 5.1 files and preferences are not read, changed, or removed.
+- Operators use Blender 5.2 context checks and are searchable with `F3` in their valid mode.
 
-When you receive or assemble assets from different sources, their location is often inconsistent:
+## Included files
 
-- the whole model may be offset from the origin
-- the bottom of the asset may not sit on `Z = 0`
-- the front or back of the model may not line up with a wall plane
-- exporting to another tool may produce awkward placement because the mesh set is not centered
-
-These scripts solve that by measuring the world-space bounds of the mesh objects in the active View Layer, then moving them so the combined result aligns with a chosen target position.
-
-## Included scripts
-
-| File | What it does |
+| File | Purpose |
 | --- | --- |
-| `startup.py` | Registers the core centering operators automatically when Blender starts. |
-| `to_center.py` | Moves the combined mesh bounds to the world origin `(0, 0, 0)`. |
-| `to_floor_center.py` | Centers the asset on X and Y and places its bottom on `Z = 0`. |
-| `to_ceiling_center.py` | Centers the asset on X and Y and places its top on `Z = 0`. |
-| `to_wall_center.py` | Centers the asset on X and Z and places its furthest positive Y side on `Y = 0`. |
-| `to_wall_floor_center.py` | Centers the asset on X, places the positive Y side on `Y = 0`, and the bottom on `Z = 0`. |
-| `invert_normals.py` | Flips polygon normals for the currently selected mesh objects. |
+| `alignment_tools.py` | Registers all five world-alignment commands. |
+| `invert_normals.py` | Inverts each unique selected Mesh datablock exactly once. |
+| `merge_meshes.py` | Intentionally flattens every scene mesh and removes every other object in the current scene. |
+| `mesh_cleaner.py` | Provides fast Edit Mode mesh analysis and cleanup tools. |
+| `remove_duplicate_materials.py` | Removes only material slots that can be proven equivalent. |
+| `presets/export_scene.fbx/Unity.py` | Existing Unity FBX preset. |
+| `presets/export_scene.fbx/Unreal.py` | Existing Unreal FBX preset. |
+| `install_blender_52.ps1` | Backs up the old Blender 5.2 scripts, installs these files, removes obsolete alignment duplicates, and enables the add-ons. |
 
-## What the operators actually move
+## Installation on Windows
 
-The centering scripts move objects, not just their origin points.
+Close or restart Blender 5.2 after installation so the currently open UI reloads the operator registry.
 
-In practice that means:
+Run from PowerShell:
 
-- the mesh objects in the active View Layer are repositioned
-- world-space bounds are recalculated from actual vertex positions
-- the asset ends up aligned to the chosen target plane or center
+```powershell
+.\install_blender_52.ps1
+```
 
-This is useful when you care about the final placement of the visible geometry, not only about the object origin.
+The installer:
 
-## How the centering logic works
+1. Targets `%APPDATA%\Blender Foundation\Blender\5.2` only.
+2. Creates a timestamped backup inside that directory.
+3. Copies the five separate add-on files to `scripts\addons`.
+4. Copies the Unity and Unreal presets to `scripts\presets\operator\export_scene.fbx`.
+5. Removes the obsolete Blender 5.2 `startup.py` and individual `to_*.py` duplicates after backing them up.
+6. Enables the five add-ons and saves the Blender 5.2 preferences.
 
-For the centering operators, the process is:
+If Blender is installed elsewhere, pass its executable explicitly:
 
-1. Collect mesh objects from the active View Layer.
-2. Apply location, rotation, and scale to those objects.
-3. Read their vertex positions in world space.
-4. Compute the combined minimum and maximum bounds.
-5. Shift every mesh object so the combined bounds match the requested target.
-6. Apply transforms again so the result is stable for export and follow-up operations.
+```powershell
+.\install_blender_52.ps1 -BlenderExecutable 'D:\Apps\Blender 5.2\blender.exe'
+```
 
-The scripts use Blender 5.1-compatible context handling with `context.temp_override(...)`, which avoids the View Layer selection error that older selection-based approaches can trigger in newer Blender versions.
+## Manual installation
 
-## Operator behavior reference
+Copy these files into `%APPDATA%\Blender Foundation\Blender\5.2\scripts\addons`:
 
-### `To Center`
+- `alignment_tools.py`
+- `invert_normals.py`
+- `merge_meshes.py`
+- `mesh_cleaner.py`
+- `remove_duplicate_materials.py`
 
-Moves the combined bounds center to:
+Enable all five in Blender 5.2 under **Edit > Preferences > Add-ons**.
 
-- `X = 0`
-- `Y = 0`
-- `Z = 0`
+Copy the preset files into:
 
-### `To Floor Center`
+```text
+%APPDATA%\Blender Foundation\Blender\5.2\scripts\presets\operator\export_scene.fbx
+```
 
-Moves the asset so that:
+Remove old Blender 5.2 copies of `startup.py` and the individual `to_center.py`, `to_floor_center.py`, `to_ceiling_center.py`, `to_wall_center.py`, and `to_wall_floor_center.py` files to prevent duplicate operator registration.
 
-- it is centered on X
-- it is centered on Y
-- its lowest point touches `Z = 0`
+## Alignment Tools
 
-### `To Ceiling Center`
-
-Moves the asset so that:
-
-- it is centered on X
-- it is centered on Y
-- its highest point touches `Z = 0`
-
-### `To Wall Center`
-
-Moves the asset so that:
-
-- it is centered on X
-- it is centered on Z
-- its furthest positive Y point touches `Y = 0`
-
-This is useful if you treat the world Y plane as a wall.
-
-### `To Wall Floor Center`
-
-Moves the asset so that:
-
-- it is centered on X
-- its furthest positive Y point touches `Y = 0`
-- its lowest point touches `Z = 0`
-
-This is useful for pushing an object into a wall-floor corner.
-
-### `Invert Normals`
-
-Flips the polygon winding of the currently selected mesh objects and updates the mesh data.
-
-## Compatibility
-
-This repository is intended for Blender 5.1.
-
-The current implementation accounts for Blender 5.1 View Layer behavior by operating on objects visible to the active View Layer instead of trying to select every object in the scene blindly.
-
-## Installation
-
-There are two practical ways to use this repository.
-
-### Option 1: Auto-load the main operators at Blender startup
-
-Copy `startup.py` into Blender's startup scripts folder.
-
-Typical Blender 5.1 script locations:
-
-- Windows: `%APPDATA%\Blender Foundation\Blender\5.1\scripts\startup`
-- macOS: `~/Library/Application Support/Blender/5.1/scripts/startup`
-- Linux: `~/.config/blender/5.1/scripts/startup`
-
-After restarting Blender, the operators from `startup.py` are registered automatically.
-
-### Option 2: Run an individual script manually
-
-Open any of the standalone `.py` files in Blender's Text Editor and run it.
-
-This is useful when:
-
-- you only want one operator
-- you want to inspect or modify the script first
-- you want to register `to_ceiling_center.py` or `invert_normals.py` separately
-
-## How to use in Blender
-
-After registration, use one of these approaches:
-
-- open the `Object` menu in the 3D Viewport
-- press `F3` and search for the operator name
-
-Available names depend on which scripts you loaded.
-
-`startup.py` currently registers:
+Available from the Object menu and `F3`:
 
 - `To Center`
 - `To Floor Center`
+- `To Ceiling Center`
 - `To Wall Center`
 - `To Wall Floor Center`
 
-If you also run the standalone files, you can additionally register:
+The commands operate on every non-empty editable mesh in the active View Layer. They intentionally preserve the previous workflow of applying location, rotation, and scale before and after alignment.
 
-- `To Ceiling Center`
-- `Invert Normals`
+Implementation improvements:
 
-`Invert Normals` also registers the shortcut:
+- all five commands use one shared bounds algorithm;
+- every vertex is transformed and inspected once rather than in separate coordinate passes;
+- the operation runs once instead of three times;
+- empty and read-only meshes are skipped safely;
+- linked mesh data is made single-user when required so transforms can be applied correctly;
+- parent/child mesh hierarchies are translated as one group;
+- invalid Edit Mode invocation is blocked by `poll()`.
 
-- `Ctrl + Shift + Alt + F`
+### Alignment reference
 
-## Important behavior notes
+| Command | Result |
+| --- | --- |
+| `To Center` | Combined bounds centered on X, Y, and Z. |
+| `To Floor Center` | Centered on X/Y with the lowest point at `Z = 0`. |
+| `To Ceiling Center` | Centered on X/Y with the highest point at `Z = 0`. |
+| `To Wall Center` | Centered on X/Z with the positive-Y side at `Y = 0`. |
+| `To Wall Floor Center` | Centered on X with the positive-Y side at `Y = 0` and bottom at `Z = 0`. |
 
-- The centering operators act on mesh objects in the active View Layer.
-- They do not limit themselves to the current selection.
-- Non-mesh objects are ignored by the bounds calculation.
-- `Invert Normals` works on the current selection only.
-- Because transforms are applied during processing, these operators are best used intentionally as asset-preparation tools, not as a non-destructive layout system.
+## Invert Normals
 
-## Recommended use cases
+`Invert Normals` is available in the Object menu, through `F3`, and with `Ctrl + Shift + Alt + F`.
 
-- preparing marketplace or library assets
-- cleaning imported CAD or kitbash models
-- aligning props before export to game engines
-- normalizing placement for thumbnails and turntable renders
-- moving furniture or product assets onto a clean floor plane
+It operates once per unique selected Mesh datablock. Selecting multiple linked instances no longer flips shared polygon data multiple times. The shortcut is removed cleanly when the add-on is disabled or reloaded.
 
-## Repository structure
+## Merge Meshes
 
-This repository is intentionally simple. It is not packaged as a full Blender add-on yet. Instead, it provides plain Python scripts that are easy to copy, inspect, and modify.
+> **Warning:** this command intentionally flattens the entire current scene. It merges all scene mesh objects and removes every camera, light, Empty, armature, and other remaining object from that scene. There is no confirmation dialog.
 
-That makes it convenient if you prefer lightweight startup scripting over add-on packaging.
+This destructive full-scene behavior is intentional and retained for the existing workflow. The implementation now:
 
-## Contributing
+- blocks invalid Edit Mode execution;
+- handles linked mesh data before transforms are applied;
+- avoids applying transforms to cameras, lights, and Empty objects that will be removed;
+- makes objects in excluded collections temporarily accessible so scene meshes are not silently omitted;
+- chooses the active mesh as the output when possible;
+- reports how many meshes were merged and how many other scene objects were removed.
 
-Pull requests are welcome. If you want to change behavior, add new alignment modes, or package this as a formal add-on, feel free to open an issue or submit a PR.
+The operation supports Blender Undo when run interactively.
+
+## Mesh Cleaner
+
+Open the **Mesh Cleaner** tab in the 3D Viewport sidebar while editing a mesh.
+
+Available tools:
+
+- Analyze Mesh
+- Check/Remove Doubles
+- Check Flipped Normals
+- Recalculate Outside
+- Convert to Quads
+- Check/Fill Holes
+- Remove Loose Geometry
+- Quick Clean Up
+
+Important changes:
+
+- duplicate detection uses `bmesh.ops.find_doubles` instead of an `O(V²)` Python loop;
+- normal checking compares the current mesh with Blender's own Recalculate Outside result instead of guessing from the local origin;
+- every operator has a correct Edit Mode poll;
+- analysis results are stored per object rather than globally on the Scene;
+- the panel displays cached results and no longer rescans every face on every redraw;
+- cleanup uses direct BMesh operations and does not select every element;
+- `Quick Clean Up` remains one command and does not automatically fill boundary holes;
+- `Fill Holes` remains available as an explicit separate command.
+
+`Quick Clean Up` performs, in order:
+
+1. Remove doubles.
+2. Convert suitable triangles to quads.
+3. Recalculate normals outside.
+4. Remove loose geometry.
+
+## Remove Duplicate Materials
+
+Run `Remove Duplicate Materials` in Object Mode on selected mesh objects.
+
+The add-on handles each unique Mesh datablock once and safely remaps polygon material indices after removing slots.
+
+It removes:
+
+- repeated slots referencing the exact same Material datablock;
+- separate materials whose complete supported material settings, node order, node properties, socket defaults, datablock references, and node links match.
+
+It keeps materials when:
+
+- node values or connections differ;
+- referenced images or node groups differ;
+- the material or node tree is animated;
+- a property cannot be serialized and compared safely.
+
+The comparison fails closed: uncertainty keeps the material instead of risking visible data loss.
+
+## FBX presets
+
+The existing preset names and export scope are intentionally unchanged:
+
+- `Unity`
+- `Unreal`
+
+Both export visible mesh objects rather than selection-only. They target static mesh export and do not include armature objects or animation.
+
+## Validation
+
+The Blender 5.2 validation suite covers:
+
+- registration and unregister/reload cycles for all add-ons;
+- all five alignment results with rotated and scaled geometry;
+- empty meshes, linked duplicates, and parent/child hierarchies;
+- linked-data normal inversion;
+- correct operator polls;
+- fast duplicate detection and removal;
+- offset-geometry normal analysis;
+- Quick Clean Up boundary preservation;
+- safe material preservation and exact-duplicate removal;
+- intentional full-scene merge behavior;
+- Unity and Unreal FBX property compatibility and actual export.
 
 ## License
 
-This project is distributed under the license included in [`LICENSE`](LICENSE).
+See [`LICENSE`](LICENSE).
