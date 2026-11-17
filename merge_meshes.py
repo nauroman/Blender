@@ -2,7 +2,7 @@ bl_info = {
     "name": "Nauroman Mesh Merger",
     "description": "Flatten all mesh objects in the current scene into one mesh and remove every other scene object",
     "author": "Roman Naumov",
-    "version": (2, 0, 0),
+    "version": (2, 1, 0),
     "blender": (5, 2, 0),
     "location": "3D Viewport > Add > Mesh > Merge Meshes and F3 search",
     "warning": "This intentionally removes every other object from the current scene",
@@ -17,10 +17,10 @@ def _scene_mesh_objects(context):
 
 
 def _make_scene_objects_accessible(context, objects):
-    collection = context.collection or context.scene.collection
+    collection = context.scene.collection
 
     for obj in objects:
-        if collection.objects.get(obj.name) is None:
+        if (context.view_layer.objects.get(obj.name) is None or not obj.visible_get()) and obj.name not in collection.objects:
             collection.objects.link(obj)
         obj.hide_select = False
         obj.hide_viewport = False
@@ -59,17 +59,24 @@ class MESH_OT_merge_meshes(bpy.types.Operator):
             self.report({'WARNING'}, "Need at least two mesh objects to merge")
             return {'CANCELLED'}
 
-        read_only = [
-            obj.name
-            for obj in mesh_objects
-            if not getattr(obj, "is_editable", True) or not getattr(obj.data, "is_editable", True)
-        ]
-        if read_only:
-            self.report({'ERROR'}, "Cannot flatten read-only mesh objects: " + ", ".join(read_only[:5]))
+        scene_objects = list(context.scene.objects)
+        other_objects = {
+            obj for scene in bpy.data.scenes if scene != context.scene for obj in scene.objects
+        }
+        if any(obj in other_objects for obj in scene_objects):
+            self.report({'WARNING'}, "Scene contains objects shared with another scene. Make a full scene copy first.")
             return {'CANCELLED'}
 
-        scene_objects = list(context.scene.objects)
-        removed_object_count = len(scene_objects) - 1
+        read_only = [
+            obj.name
+            for obj in scene_objects
+            if not obj.is_editable or (obj.type == 'MESH' and not obj.data.is_editable)
+        ]
+        if read_only:
+            self.report({'ERROR'}, "Cannot flatten read-only scene objects: " + ", ".join(read_only[:5]))
+            return {'CANCELLED'}
+
+        removed_object_count = len(scene_objects) - len(mesh_objects)
         _make_scene_objects_accessible(context, scene_objects)
         _make_mesh_data_single_user(mesh_objects)
 

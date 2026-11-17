@@ -2,25 +2,15 @@ bl_info = {
     "name": "Nauroman Alignment Tools",
     "description": "Align all editable mesh objects in the active View Layer to world center, floor, ceiling, or wall planes",
     "author": "Roman Naumov",
-    "version": (2, 0, 0),
+    "version": (2, 1, 0),
     "blender": (5, 2, 0),
     "location": "3D Viewport > Object menu and F3 search",
     "category": "Object",
 }
 
-import math
-
 import bpy
+import numpy as np
 from mathutils import Vector
-
-
-ALIGNMENT_LABELS = {
-    "CENTER": "To Center",
-    "FLOOR_CENTER": "To Floor Center",
-    "CEILING_CENTER": "To Ceiling Center",
-    "WALL_CENTER": "To Wall Center",
-    "WALL_FLOOR_CENTER": "To Wall Floor Center",
-}
 
 
 def _eligible_mesh_objects(context):
@@ -43,9 +33,21 @@ def _eligible_mesh_objects(context):
 
 
 def _apply_transforms(context, objects):
-    if not objects:
-        return
+    # Bake descendants first. Decomposing a child's world transform after
+    # applying a rotated, non-uniform parent scale can discard shear.
+    levels = {}
+    for obj in objects:
+        depth = 0
+        parent = obj.parent
+        while parent is not None:
+            depth += 1
+            parent = parent.parent
+        levels.setdefault(depth, []).append(obj)
+    for depth in sorted(levels, reverse=True):
+        _apply_batch(context, levels[depth])
 
+
+def _apply_batch(context, objects):
     active = objects[0]
     with context.temp_override(
         active_object=active,
@@ -71,21 +73,22 @@ def _make_mesh_data_single_user(objects):
 
 
 def _combined_world_bounds(objects):
-    minimum = Vector((math.inf, math.inf, math.inf))
-    maximum = Vector((-math.inf, -math.inf, -math.inf))
+    minimum = np.full(3, np.inf)
+    maximum = np.full(3, -np.inf)
 
     for obj in objects:
-        matrix = obj.matrix_world
-        for vertex in obj.data.vertices:
-            point = matrix @ vertex.co
-            minimum.x = min(minimum.x, point.x)
-            minimum.y = min(minimum.y, point.y)
-            minimum.z = min(minimum.z, point.z)
-            maximum.x = max(maximum.x, point.x)
-            maximum.y = max(maximum.y, point.y)
-            maximum.z = max(maximum.z, point.z)
+        vertices = obj.data.vertices
+        coords = np.empty((len(vertices), 3), dtype=np.float32)
+        vertices.foreach_get("co", coords.ravel())
+        # Applied transforms usually leave the identity matrix. Parented meshes
+        # can still have a world transform, so reduce actual world coordinates.
+        if not obj.matrix_world.is_identity:
+            matrix = np.asarray(obj.matrix_world, dtype=np.float32)
+            coords = coords @ matrix[:3, :3].T + matrix[:3, 3]
+        minimum = np.minimum(minimum, coords.min(axis=0))
+        maximum = np.maximum(maximum, coords.max(axis=0))
 
-    return minimum, maximum
+    return Vector(minimum), Vector(maximum)
 
 
 def _alignment_offset(mode, minimum, maximum):
@@ -148,8 +151,8 @@ class _AlignmentOperatorMixin:
         if context.mode != 'OBJECT':
             cls.poll_message_set("Alignment is available in Object Mode")
             return False
-        objects, _, _ = _eligible_mesh_objects(context)
-        if not objects:
+        if not any(obj.type == 'MESH' and obj.data.vertices and obj.is_editable
+                   and obj.data.is_editable for obj in context.view_layer.objects):
             cls.poll_message_set("No non-empty editable meshes in the active View Layer")
             return False
         return True

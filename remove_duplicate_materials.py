@@ -2,7 +2,7 @@ bl_info = {
     "name": "Nauroman Remove Duplicate Materials",
     "description": "Safely remove duplicate material slots from selected mesh datablocks",
     "author": "Roman Naumov",
-    "version": (2, 0, 0),
+    "version": (2, 1, 0),
     "blender": (5, 2, 0),
     "location": "3D Viewport > Object menu and F3 search",
     "category": "Material",
@@ -11,6 +11,7 @@ bl_info = {
 import math
 
 import bpy
+import numpy as np
 
 
 class UnsafeMaterialSignature(RuntimeError):
@@ -80,16 +81,19 @@ def _plain_value_signature(value, visited):
 
 
 def _custom_property_signature(value):
-    if isinstance(value, dict):
-        return tuple(sorted((str(key), _custom_property_signature(item)) for key, item in value.items()))
+    if isinstance(value, bpy.types.ID):
+        return ("ID", _id_signature(value))
+    if hasattr(value, "items"):
+        return ("group", tuple(sorted(
+            (key, _custom_property_signature(item)) for key, item in value.items()
+        )))
     if isinstance(value, float):
-        return _float_signature(value)
+        return ("float", _float_signature(value))
     if isinstance(value, (bool, int, str)) or value is None:
-        return value
-    try:
-        return tuple(_custom_property_signature(item) for item in value)
-    except TypeError:
-        return repr(value)
+        return (type(value).__name__, value)
+    if hasattr(value, "typecode"):
+        return (value.typecode, tuple(_custom_property_signature(item) for item in value))
+    raise UnsafeMaterialSignature(f"Unsupported custom property type: {type(value).__name__}")
 
 
 def _rna_signature(owner, ignored=(), visited=None):
@@ -247,13 +251,17 @@ def _deduplicate_mesh_slots(mesh, signature_cache):
     removed_set = set(indices_to_remove)
     kept_indices = [index for index in range(len(materials)) if index not in removed_set]
     new_index = {old_index: index for index, old_index in enumerate(kept_indices)}
-    polygon_material_indices = [polygon.material_index for polygon in mesh.polygons]
+    remap = np.array([new_index[canonical_index[i]] for i in range(len(materials))], dtype=np.int32)
+    indices = np.empty(len(mesh.polygons), dtype=np.int32)
+    mesh.polygons.foreach_get("material_index", indices)
+    if indices.size and (indices.min() < 0 or indices.max() >= len(remap)):
+        return 0, unsafe_materials
+    indices = remap[indices]
 
     for index in sorted(indices_to_remove, reverse=True):
         mesh.materials.pop(index=index)
 
-    for polygon, old_index in zip(mesh.polygons, polygon_material_indices):
-        polygon.material_index = new_index[canonical_index.get(old_index, old_index)]
+    mesh.polygons.foreach_set("material_index", indices)
 
     mesh.update()
     return len(indices_to_remove), unsafe_materials
@@ -282,13 +290,25 @@ class OBJECT_OT_remove_duplicate_materials(bpy.types.Operator):
         signature_cache = {}
         removed_count = 0
         unsafe_materials = 0
+        # Slot indices belong to the mesh. An unselected instance can override
+        # either slot with a different material, making a data-level merge unsafe.
+        candidates = {mesh for mesh in meshes if len(mesh.materials) >= 2}
+        overridden = {
+            obj.data for obj in bpy.data.objects
+            if obj.type == 'MESH' and obj.data in candidates
+            and any(slot.link == 'OBJECT' for slot in obj.material_slots)
+        }
 
         for mesh in meshes:
+            if mesh in overridden:
+                continue
             removed, unsafe = _deduplicate_mesh_slots(mesh, signature_cache)
             removed_count += removed
             unsafe_materials += unsafe
 
         message = f"Removed {removed_count} duplicate material slot(s) from {len(meshes)} unique mesh datablock(s)"
+        if overridden:
+            message += f"; skipped {len(overridden)} mesh(es) with object-linked material slots"
         if unsafe_materials:
             message += f"; kept {unsafe_materials} material(s) that could not be compared safely"
         self.report({'INFO'}, message)

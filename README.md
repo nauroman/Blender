@@ -1,205 +1,68 @@
-# Nauroman Blender Tools for Blender 5.2
+# Nauroman Blender Tools
 
-This repository contains Roman Naumov's separate Blender 5.2 workflow scripts for asset alignment, mesh cleanup, material cleanup, full-scene mesh merging, normal inversion, and FBX export presets.
+Prepare static assets for export from **Blender 5.2 LTS**. The five independent add-ons handle placement, mesh cleanup, face orientation, material slots and scene flattening. FBX presets are included for Unity and Unreal. For the earlier Blender 5.1 scripts, see the [5.1 snapshot](https://github.com/nauroman/Blender/tree/cfc4498).
 
-The five alignment commands share one implementation in `alignment_tools.py`. The other tools remain separate add-ons so each one can be enabled, disabled, or maintained independently.
+## Put a chair on the floor
 
-## Compatibility and scope
+1. Put the chair parts in the active View Layer. Exclude collections containing other mesh assets, including any modeled floor.
+2. In Object Mode, hover over the 3D Viewport, press **F3** and run **To Floor Center**.
+3. The lowest vertex now sits on world `Z = 0`. The midpoint between the leftmost and rightmost vertices sits at `X = 0`, and the front-to-back midpoint sits at `Y = 0`. The chair parts keep their spacing.
+4. Choose **File > Export > FBX**, pick **Unity** or **Unreal** from Operator Presets, and export.
 
-- Target version: Blender 5.2 LTS.
-- The installer writes only to the Blender `5.2` user configuration directory.
-- Blender 5.1 files and preferences are not read, changed, or removed.
-- Operators use Blender 5.2 context checks and are searchable with `F3` in their valid mode.
+Placement uses every eligible mesh in the active View Layer, including deselected meshes. Hiding an object with the eye icon can leave it in that layer. **Exclude its collection** to leave it out of the bounds calculation. Alignment applies location, rotation and scale to the meshes, so use an export copy when you need the original transforms.
 
-## Included files
+## Install
 
-| File | Purpose |
-| --- | --- |
-| `alignment_tools.py` | Registers all five world-alignment commands. |
-| `invert_normals.py` | Inverts each unique selected Mesh datablock exactly once. |
-| `merge_meshes.py` | Intentionally flattens every scene mesh and removes every other object in the current scene. |
-| `mesh_cleaner.py` | Provides fast Edit Mode mesh analysis and cleanup tools. |
-| `remove_duplicate_materials.py` | Removes only material slots that can be proven equivalent. |
-| `presets/export_scene.fbx/Unity.py` | Existing Unity FBX preset. |
-| `presets/export_scene.fbx/Unreal.py` | Existing Unreal FBX preset. |
-| `install_blender_52.ps1` | Backs up the old Blender 5.2 scripts, installs these files, removes obsolete alignment duplicates, and enables the add-ons. |
-
-## Installation on Windows
-
-Close or restart Blender 5.2 after installation so the currently open UI reloads the operator registry.
-
-Run from PowerShell:
+**Windows.** Close Blender 5.2. Download and extract the repository, open PowerShell in the extracted folder and run
 
 ```powershell
 .\install_blender_52.ps1
 ```
 
-The installer:
+For a custom installation, pass `-BlenderExecutable 'D:\Apps\Blender 5.2\blender.exe'`. The installer checks the executable version, copies the five add-ons and two presets into your Blender 5.2 user directory, enables the add-ons and saves preferences. It prints the backup directory containing previous copies of replaced files and any existing `config/userpref.blend`.
 
-1. Targets `%APPDATA%\Blender Foundation\Blender\5.2` only.
-2. Creates a timestamped backup inside that directory.
-3. Copies the five separate add-on files to `scripts\addons`.
-4. Copies the Unity and Unreal presets to `scripts\presets\operator\export_scene.fbx`.
-5. Removes the obsolete Blender 5.2 `startup.py` and individual `to_*.py` duplicates after backing them up.
-6. Enables the five add-ons and saves the Blender 5.2 preferences.
+If the installer finds an older `startup.py` or a legacy alignment script, it lists the paths and stops before changing files. Review the list. If those files can be retired, run `.\install_blender_52.ps1 -MigrateLegacyScripts` to back them up and remove them. To recover previous files, close Blender and copy their matching paths from the backup into the 5.2 user directory.
 
-If Blender is installed elsewhere, pass its executable explicitly:
+**Manual installation.** In Blender's Python Console, run `bpy.utils.user_resource('SCRIPTS')` to find the user scripts directory. Copy the five root-level Python files into its `addons` subdirectory. Copy both preset files from [presets/export_scene.fbx](presets/export_scene.fbx) into `presets/operator/export_scene.fbx` under the same scripts directory. Create missing folders, restart Blender and enable the tools you need under **Edit > Preferences > Add-ons**. Retire any earlier copies registering the same commands.
 
-```powershell
-.\install_blender_52.ps1 -BlenderExecutable 'D:\Apps\Blender 5.2\blender.exe'
+## Choose a tool
+
+| Command | Mode and scope | Result |
+| --- | --- | --- |
+| **To Center** | Object Mode, active View Layer | Centers the combined bounds on all three world axes. |
+| **To Floor Center** / **To Ceiling Center** | Object Mode, active View Layer | Centers X and Y. Places the lowest / highest vertex at Z = 0. |
+| **To Wall Center** | Object Mode, active View Layer | Centers X and Z. Places the maximum Y at Y = 0. |
+| **To Wall Floor Center** | Object Mode, active View Layer | Centers X. Places the maximum Y at Y = 0 and the minimum Z at Z = 0. |
+| **Invert Normals** | Object Mode, selected meshes | Reverses face winding once per shared mesh. Shortcut **Ctrl + Shift + Alt + F**. |
+| **Remove Duplicate Materials** | Object Mode, selected meshes | Collapses equivalent material slots and remaps faces to the surviving slots. |
+| **Mesh Cleaner** | Edit Mode, active mesh | Open the 3D Viewport sidebar with **N** and select **Mesh Cleaner**. |
+| **Merge Meshes** | Object Mode, entire current scene | Joins the meshes and removes all other scene objects, including cameras, lights and armatures. |
+
+### Geometry and materials
+
+- **Alignment** measures world-space vertices of the base meshes. Empty meshes and read-only data are skipped. It gives shared geometry separate mesh data before applying transforms. If a modifier changes the silhouette, apply it on the export copy to include its result in alignment.
+- **Mesh Cleaner** shows the last analysis of the active mesh. Run **Analyze Mesh** after manual edits. **Quick Clean Up** merges vertices within 0.0001 local units, joins eligible triangles into quads, recalculates normals outside and removes loose geometry. Open boundaries are preserved until you explicitly choose **Fill Holes**.
+- **Invert Normals** edits the mesh datablock. Unselected objects sharing that datablock also display the reversed faces. Blender's winding operation does not recalculate custom split normals.
+- **Remove Duplicate Materials** compares material settings, node graphs and referenced data. Animated or unsupported materials can still be consolidated when slots reference the exact same datablock. A mesh with object-linked slots on any instance is skipped to preserve per-object assignments. Material datablocks remain in the file.
+- **Merge Meshes** is intended for a disposable export scene. It includes meshes in excluded collections, requires at least two meshes, and runs immediately when invoked. It prefers the active mesh as the output. If an object belongs to another scene as well, use **New Scene > Full Copy** before flattening.
+
+### FBX presets
+
+Both presets export visible meshes, apply mesh modifiers, embed textures where supported and disable animation. Check visibility before export because the presets include deselected meshes.
+
+| Preset | Forward | Up | Smoothing |
+| --- | --- | --- | --- |
+| Unity | -Z | Y | Normals only |
+| Unreal | Y | Z | Face |
+
+## Run the checks
+
+From the repository root, run the [smoke tests](tests/blender_smoke.py) in a fresh Blender process
+
+```sh
+blender --background --factory-startup --python-exit-code 1 --python tests/blender_smoke.py
 ```
 
-## Manual installation
+Use the full path to the Blender 5.2 executable if it is outside your PATH. The checks register all five add-ons, exercise placement on a rotated hierarchy, verify material assignments and normals on linked meshes, clean an open mesh, flatten a test scene and write both FBX variants to a temporary directory. A failed check exits with a nonzero status.
 
-Copy these files into `%APPDATA%\Blender Foundation\Blender\5.2\scripts\addons`:
-
-- `alignment_tools.py`
-- `invert_normals.py`
-- `merge_meshes.py`
-- `mesh_cleaner.py`
-- `remove_duplicate_materials.py`
-
-Enable all five in Blender 5.2 under **Edit > Preferences > Add-ons**.
-
-Copy the preset files into:
-
-```text
-%APPDATA%\Blender Foundation\Blender\5.2\scripts\presets\operator\export_scene.fbx
-```
-
-Remove old Blender 5.2 copies of `startup.py` and the individual `to_center.py`, `to_floor_center.py`, `to_ceiling_center.py`, `to_wall_center.py`, and `to_wall_floor_center.py` files to prevent duplicate operator registration.
-
-## Alignment Tools
-
-Available from the Object menu and `F3`:
-
-- `To Center`
-- `To Floor Center`
-- `To Ceiling Center`
-- `To Wall Center`
-- `To Wall Floor Center`
-
-The commands operate on every non-empty editable mesh in the active View Layer. They intentionally preserve the previous workflow of applying location, rotation, and scale before and after alignment.
-
-Implementation improvements:
-
-- all five commands use one shared bounds algorithm;
-- every vertex is transformed and inspected once rather than in separate coordinate passes;
-- the operation runs once instead of three times;
-- empty and read-only meshes are skipped safely;
-- linked mesh data is made single-user when required so transforms can be applied correctly;
-- parent/child mesh hierarchies are translated as one group;
-- invalid Edit Mode invocation is blocked by `poll()`.
-
-### Alignment reference
-
-| Command | Result |
-| --- | --- |
-| `To Center` | Combined bounds centered on X, Y, and Z. |
-| `To Floor Center` | Centered on X/Y with the lowest point at `Z = 0`. |
-| `To Ceiling Center` | Centered on X/Y with the highest point at `Z = 0`. |
-| `To Wall Center` | Centered on X/Z with the positive-Y side at `Y = 0`. |
-| `To Wall Floor Center` | Centered on X with the positive-Y side at `Y = 0` and bottom at `Z = 0`. |
-
-## Invert Normals
-
-`Invert Normals` is available in the Object menu, through `F3`, and with `Ctrl + Shift + Alt + F`.
-
-It operates once per unique selected Mesh datablock. Selecting multiple linked instances no longer flips shared polygon data multiple times. The shortcut is removed cleanly when the add-on is disabled or reloaded.
-
-## Merge Meshes
-
-> **Warning:** this command intentionally flattens the entire current scene. It merges all scene mesh objects and removes every camera, light, Empty, armature, and other remaining object from that scene. There is no confirmation dialog.
-
-This destructive full-scene behavior is intentional and retained for the existing workflow. The implementation now:
-
-- blocks invalid Edit Mode execution;
-- handles linked mesh data before transforms are applied;
-- avoids applying transforms to cameras, lights, and Empty objects that will be removed;
-- makes objects in excluded collections temporarily accessible so scene meshes are not silently omitted;
-- chooses the active mesh as the output when possible;
-- reports how many meshes were merged and how many other scene objects were removed.
-
-The operation supports Blender Undo when run interactively.
-
-## Mesh Cleaner
-
-Open the **Mesh Cleaner** tab in the 3D Viewport sidebar while editing a mesh.
-
-Available tools:
-
-- Analyze Mesh
-- Check/Remove Doubles
-- Check Flipped Normals
-- Recalculate Outside
-- Convert to Quads
-- Check/Fill Holes
-- Remove Loose Geometry
-- Quick Clean Up
-
-Important changes:
-
-- duplicate detection uses `bmesh.ops.find_doubles` instead of an `O(V²)` Python loop;
-- normal checking compares the current mesh with Blender's own Recalculate Outside result instead of guessing from the local origin;
-- every operator has a correct Edit Mode poll;
-- analysis results are stored per object rather than globally on the Scene;
-- the panel displays cached results and no longer rescans every face on every redraw;
-- cleanup uses direct BMesh operations and does not select every element;
-- `Quick Clean Up` remains one command and does not automatically fill boundary holes;
-- `Fill Holes` remains available as an explicit separate command.
-
-`Quick Clean Up` performs, in order:
-
-1. Remove doubles.
-2. Convert suitable triangles to quads.
-3. Recalculate normals outside.
-4. Remove loose geometry.
-
-## Remove Duplicate Materials
-
-Run `Remove Duplicate Materials` in Object Mode on selected mesh objects.
-
-The add-on handles each unique Mesh datablock once and safely remaps polygon material indices after removing slots.
-
-It removes:
-
-- repeated slots referencing the exact same Material datablock;
-- separate materials whose complete supported material settings, node order, node properties, socket defaults, datablock references, and node links match.
-
-It keeps materials when:
-
-- node values or connections differ;
-- referenced images or node groups differ;
-- the material or node tree is animated;
-- a property cannot be serialized and compared safely.
-
-The comparison fails closed: uncertainty keeps the material instead of risking visible data loss.
-
-## FBX presets
-
-The existing preset names and export scope are intentionally unchanged:
-
-- `Unity`
-- `Unreal`
-
-Both export visible mesh objects rather than selection-only. They target static mesh export and do not include armature objects or animation.
-
-## Validation
-
-The Blender 5.2 validation suite covers:
-
-- registration and unregister/reload cycles for all add-ons;
-- all five alignment results with rotated and scaled geometry;
-- empty meshes, linked duplicates, and parent/child hierarchies;
-- linked-data normal inversion;
-- correct operator polls;
-- fast duplicate detection and removal;
-- offset-geometry normal analysis;
-- Quick Clean Up boundary preservation;
-- safe material preservation and exact-duplicate removal;
-- intentional full-scene merge behavior;
-- Unity and Unreal FBX property compatibility and actual export.
-
-## License
-
-See [`LICENSE`](LICENSE).
+[MIT License](LICENSE)

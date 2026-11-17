@@ -2,7 +2,7 @@ bl_info = {
     "name": "Nauroman Mesh Cleaner",
     "description": "Analyze and clean the active Edit Mode mesh with Blender-native BMesh operations",
     "author": "Rob Dickinson, maintained by Roman Naumov",
-    "version": (2, 0, 0),
+    "version": (2, 1, 0),
     "blender": (5, 2, 0),
     "location": "3D Viewport > Sidebar > Mesh Cleaner",
     "category": "Mesh",
@@ -56,23 +56,21 @@ def _boundary_summary(bm):
     return boundary_edges, components
 
 
+def _recalculate_normals(bm):
+    bm.normal_update()
+    before = [face.normal.copy() for face in bm.faces]
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    bm.normal_update()
+    return sum(normal.dot(face.normal) < 0.0 for normal, face in zip(before, bm.faces))
+
+
 def _flipped_face_count(bm):
     if not bm.faces:
         return 0
 
     probe = bm.copy()
     try:
-        probe.faces.ensure_lookup_table()
-        probe.faces.index_update()
-        probe.normal_update()
-        original_normals = [face.normal.copy() for face in probe.faces]
-        bmesh.ops.recalc_face_normals(probe, faces=list(probe.faces))
-        probe.normal_update()
-        return sum(
-            1
-            for before, face in zip(original_normals, probe.faces)
-            if before.dot(face.normal) < 0.0
-        )
+        return _recalculate_normals(probe)
     finally:
         probe.free()
 
@@ -108,11 +106,11 @@ def _remove_loose_geometry(bm):
     return len(removed_verts), len(removed_edges)
 
 
-def _refresh_stats(obj, bm):
+def _refresh_stats(obj, bm, *, normals_recalculated=False):
     duplicate_map = bmesh.ops.find_doubles(bm, verts=list(bm.verts), dist=MERGE_DISTANCE)["targetmap"]
     _set_stat(obj, "double_count", len(duplicate_map))
     _set_stat(obj, "triangle_count", sum(1 for face in bm.faces if len(face.verts) == 3))
-    _set_stat(obj, "flipped_normals_count", _flipped_face_count(bm))
+    _set_stat(obj, "flipped_normals_count", 0 if normals_recalculated else _flipped_face_count(bm))
     boundary_edges, boundary_components = _boundary_summary(bm)
     _set_stat(obj, "boundary_edge_count", len(boundary_edges))
     _set_stat(obj, "boundary_component_count", boundary_components)
@@ -189,9 +187,7 @@ class MESH_OT_fix_flipped_normals(_EditMeshOperatorMixin, bpy.types.Operator):
 
     def execute(self, context):
         obj, bm = _active_edit_mesh(context)
-        before = _flipped_face_count(bm)
-        bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
-        bm.normal_update()
+        before = _recalculate_normals(bm)
         _set_stat(obj, "flipped_normals_count", 0)
         _update_mesh(obj)
         self.report({'INFO'}, f"Recalculated normals; flipped {before} face(s)")
@@ -249,14 +245,15 @@ class MESH_OT_fix_holes(_EditMeshOperatorMixin, bpy.types.Operator):
 
     def execute(self, context):
         obj, bm = _active_edit_mesh(context)
-        boundary_edges, _ = _boundary_summary(bm)
+        boundary_edges = [edge for edge in bm.edges if edge.is_boundary]
         if not boundary_edges:
             self.report({'INFO'}, "No boundary holes were found")
             return {'CANCELLED'}
 
         result = bmesh.ops.holes_fill(bm, edges=boundary_edges, sides=0)
-        _set_stat(obj, "boundary_edge_count", 0)
-        _set_stat(obj, "boundary_component_count", 0)
+        remaining, components = _boundary_summary(bm)
+        _set_stat(obj, "boundary_edge_count", len(remaining))
+        _set_stat(obj, "boundary_component_count", components)
         _update_mesh(obj, destructive=True)
         self.report({'INFO'}, f"Created {len(result.get('faces', ()))} face(s) while filling holes")
         return {'FINISHED'}
@@ -275,12 +272,11 @@ class MESH_OT_quick_clean_up(_EditMeshOperatorMixin, bpy.types.Operator):
         bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=MERGE_DISTANCE)
         removed_doubles = verts_before - len(bm.verts)
         created_quads = _convert_triangles_to_quads(bm)
-        flipped_faces = _flipped_face_count(bm)
-        bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+        flipped_faces = _recalculate_normals(bm)
         removed_verts, removed_edges = _remove_loose_geometry(bm)
 
         _update_mesh(obj, destructive=True)
-        _refresh_stats(obj, bm)
+        _refresh_stats(obj, bm, normals_recalculated=True)
         self.report(
             {'INFO'},
             "Cleaned mesh: "

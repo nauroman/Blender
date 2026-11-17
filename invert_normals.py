@@ -2,7 +2,7 @@ bl_info = {
     "name": "Nauroman Invert Normals",
     "description": "Invert polygon normals once per unique selected mesh datablock",
     "author": "Roman Naumov",
-    "version": (2, 0, 0),
+    "version": (2, 1, 0),
     "blender": (5, 2, 0),
     "location": "3D Viewport > Object menu, F3, or Ctrl+Shift+Alt+F",
     "category": "Object",
@@ -56,9 +56,8 @@ class OBJECT_OT_invert_normals(bpy.types.Operator):
 
         polygon_count = 0
         for mesh in meshes:
-            for polygon in mesh.polygons:
-                polygon.flip()
-                polygon_count += 1
+            polygon_count += len(mesh.polygons)
+            mesh.flip_normals()
             mesh.update()
 
         message = f"Inverted {polygon_count} polygon(s) in {len(meshes)} unique mesh datablock(s)"
